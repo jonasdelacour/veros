@@ -76,6 +76,9 @@ def main(pyom2_lib, timesteps, size):
     from veros.distributed import barrier
     from veros.core.operators import flush, numpy as npx
     from veros.core.external.solve_pressure import get_linear_solver
+    from veros.core.external.solvers.scipy import SciPySolver
+    import scipy.io
+    import numpy as np
 
     here = os.path.dirname(__file__)
     assets = get_assets("bench-external", os.path.join(here, "bench-external-assets.json"))
@@ -96,6 +99,19 @@ def main(pyom2_lib, timesteps, size):
 
     state, input_data = get_dummy_state(infile)
     solver = get_linear_solver(state)
+    if solver == SciPySolver:
+        mat = solver._matrix
+        with np.printoptions(threshold=100000000, linewidth=14):
+            with open("sparse_matrix.mtx", "w") as file:
+                file.write("%%MatrixMarket matrix coordinate real general\n%")
+
+            with open("sparse_matrix.mtx", "a") as file:
+                logger.info("Writing matrix to mtx")
+                scipy.io.mmwrite("sparse_matrix.mtx", mat, comment="%amgx rhs solution", symmetry="general")
+                logger.info("Writing rhs and x0 to mtx")
+                input_data["rhs"].reshape(-1).tofile(file, sep="\n")
+                file.write("\n")
+                input_data["x0"].reshape(-1).tofile(file, sep="\n")
 
     if not pyom2_lib:
 

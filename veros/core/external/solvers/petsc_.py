@@ -12,29 +12,34 @@ from veros.core.external.poisson_matrix import assemble_poisson_matrix
 STREAM_OPTIONS = {
     "solver_type": "bcgs",
     "atol": 1e-24,
-    "rtol": 1e-14,
+    "rtol": 1e-8,
     "max_it": 1000,
     "PC_type": "gamg",
-    "pc_gamg_type": "agg",
-    "pc_gamg_reuse_interpolation": True,
-    "pc_gamg_threshold": 1e-4,
-    "pc_gamg_sym_graph": True,
-    "pc_gamg_agg_nsmooths": 2,
-    "mg_levels_pc_type": "jacobi",
+    "pc_options": {
+        "pc_gamg_type": "agg",
+        "pc_gamg_reuse_interpolation": True,
+        "pc_gamg_threshold": 1e-4,
+        "pc_gamg_sym_graph": True,
+        "pc_gamg_agg_nsmooths": 1,
+        "mg_levels_pc_type": "jacobi",
+    },
 }
 
 PRESSURE_OPTIONS = {
     "solver_type": "bcgs",
     "atol": 1e-24,
-    "rtol": 1e-14,
+    "rtol": 1e-8,
     "max_it": 1000,
     "PC_type": "gamg",
-    "pc_gamg_type": "agg",
-    "pc_gamg_reuse_interpolation": True,
-    "pc_gamg_threshold": 1e-4,
-    "pc_gamg_sym_graph": True,
-    "pc_gamg_agg_nsmooths": 2,
-    "mg_levels_pc_type": "jacobi",
+    "pc_options": {
+        "pc_gamg_type": "agg",
+        "pc_gamg_reuse_interpolation": True,
+        "pc_gamg_threshold": 1e-4,
+        "pc_gamg_sym_graph": True,
+        "pc_gamg_agg_nsmooths": 1,
+        "mg_levels_pc_type": "jacobi",
+        "mg_cycles": "v",
+    },
 }
 
 
@@ -47,10 +52,12 @@ class PETScSolver(LinearSolver):
             )
 
         settings = state.settings
+        vs = state.variables
+
         if settings.enable_streamfunction:
-            OPTIONS = STREAM_OPTIONS
+            options = STREAM_OPTIONS
         else:
-            OPTIONS = PRESSURE_OPTIONS
+            options = PRESSURE_OPTIONS
 
         if settings.enable_cyclic_x:
             boundary_type = ("periodic", "ghosted")
@@ -83,24 +90,24 @@ class PETScSolver(LinearSolver):
         self._ksp.create(self._da.comm)
         self._ksp.setOperators(self._matrix)
 
-        self._ksp.setType(OPTIONS["solver_type"])
-        self._ksp.setTolerances(atol=OPTIONS["atol"], rtol=OPTIONS["rtol"], max_it=OPTIONS["max_it"])
+        self._ksp.setType(options["solver_type"])
+        self._ksp.setTolerances(atol=options["atol"], rtol=options["rtol"], max_it=options["max_it"])
 
         # preconditioner
-        self._ksp.getPC().setType(OPTIONS["PC_type"])
+        self._ksp.getPC().setType(options["PC_type"])
 
-        petsc_options["pc_gamg_type"] = OPTIONS["pc_gamg_type"]
-        petsc_options["pc_gamg_reuse_interpolation"] = OPTIONS["pc_gamg_reuse_interpolation"]
-        petsc_options["pc_gamg_threshold"] = OPTIONS["pc_gamg_threshold"]
-        petsc_options["pc_gamg_sym_graph"] = OPTIONS["pc_gamg_sym_graph"]
-        petsc_options["pc_gamg_agg_nsmooths"] = OPTIONS["pc_gamg_agg_nsmooths"]
-        petsc_options["mg_levels_pc_type"] = OPTIONS["mg_levels_pc_type"]
+        for key in options["pc_options"]:
+            petsc_options[key] = options["pc_options"][key]
 
         if rs.petsc_options:
             petsc_options.insertString(rs.petsc_options)
 
         self._ksp.setFromOptions()
         self._ksp.getPC().setFromOptions()
+
+        if options["pc_options"]["pc_gamg_type"] == "geo":
+            coords_x, coords_y = npx.meshgrid(vs.xt[2:-2], vs.yt[2:-2])
+            self._ksp.getPC().setCoordinates(npx.asarray([coords_x.reshape(-1), coords_y.reshape(-1)]).reshape(-1, 2))
 
         self._rhs_petsc = self._da.createGlobalVec()
         self._sol_petsc = self._da.createGlobalVec()
