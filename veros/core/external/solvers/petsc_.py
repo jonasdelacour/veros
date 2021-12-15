@@ -83,7 +83,7 @@ class PETScSolver(LinearSolver):
 
         self._matrix = self._assemble_poisson_matrix(state)
 
-        petsc_options = PETSc.options()
+        petsc_options = PETSc.Options()
 
         # setup krylov method
         self._ksp = PETSc.KSP()
